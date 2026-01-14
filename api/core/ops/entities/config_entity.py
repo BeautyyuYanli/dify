@@ -8,6 +8,7 @@ from core.ops.utils import validate_integer_id, validate_project_name, validate_
 class TracingProviderEnum(StrEnum):
     ARIZE = "arize"
     PHOENIX = "phoenix"
+    LOGFIRE = "logfire"
     LANGFUSE = "langfuse"
     LANGSMITH = "langsmith"
     OPIK = "opik"
@@ -91,6 +92,27 @@ class PhoenixConfig(BaseTracingConfig):
     @classmethod
     def endpoint_validator(cls, v, info: ValidationInfo):
         return validate_url_with_path(v, "https://app.phoenix.arize.com")
+
+
+class LogfireConfig(BaseTracingConfig):
+    """
+    Pydantic Logfire tracing config (OTLP over HTTP).
+
+    Notes:
+    - Logfire authenticates via a "write token" in the `Authorization` header.
+    - The endpoint may be region-specific (e.g. `https://logfire-us.pydantic.dev/v1/traces`).
+    """
+
+    write_token: str
+    organization: str | None = None
+    project: str | None = None
+    endpoint: str = "https://logfire-api.pydantic.dev/v1/traces"
+
+    @field_validator("endpoint")
+    @classmethod
+    def endpoint_validator(cls, v, info: ValidationInfo):
+        # Logfire accepts endpoints with path (commonly `/v1/traces`).
+        return validate_url_with_path(v, "https://logfire-api.pydantic.dev/v1/traces")
 
 
 class LangfuseConfig(BaseTracingConfig):

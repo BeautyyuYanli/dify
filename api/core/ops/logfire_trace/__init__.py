@@ -1,0 +1,2 @@
+"""Logfire tracing provider implementation."""
+

@@ -110,6 +110,16 @@ class OpsTraceProviderConfigMap(collections.UserDict[str, dict[str, Any]]):
                     "other_keys": ["project", "endpoint"],
                     "trace_instance": ArizePhoenixDataTrace,
                 }
+            case TracingProviderEnum.LOGFIRE:
+                from core.ops.entities.config_entity import LogfireConfig
+                from core.ops.logfire_trace.logfire_trace import LogfireDataTrace
+
+                return {
+                    "config_class": LogfireConfig,
+                    "secret_keys": ["write_token"],
+                    "other_keys": ["organization", "project", "endpoint"],
+                    "trace_instance": LogfireDataTrace,
+                }
             case TracingProviderEnum.ALIYUN:
                 from core.ops.aliyun_trace.aliyun_trace import AliyunDataTrace
                 from core.ops.entities.config_entity import AliyunConfig

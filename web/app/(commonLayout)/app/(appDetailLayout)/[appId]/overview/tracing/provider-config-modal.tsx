@@ -1,6 +1,6 @@
 'use client'
 import type { FC } from 'react'
-import type { AliyunConfig, ArizeConfig, DatabricksConfig, LangFuseConfig, LangSmithConfig, MLflowConfig, OpikConfig, PhoenixConfig, TencentConfig, WeaveConfig } from './type'
+import type { AliyunConfig, ArizeConfig, DatabricksConfig, LangFuseConfig, LangSmithConfig, LogfireConfig, MLflowConfig, OpikConfig, PhoenixConfig, TencentConfig, WeaveConfig } from './type'
 import { useBoolean } from 'ahooks'
 import * as React from 'react'
 import { useCallback, useState } from 'react'
@@ -23,10 +23,10 @@ import { TracingProvider } from './type'
 type Props = {
   appId: string
   type: TracingProvider
-  payload?: ArizeConfig | PhoenixConfig | LangSmithConfig | LangFuseConfig | OpikConfig | WeaveConfig | AliyunConfig | MLflowConfig | DatabricksConfig | TencentConfig | null
+  payload?: ArizeConfig | PhoenixConfig | LogfireConfig | LangSmithConfig | LangFuseConfig | OpikConfig | WeaveConfig | AliyunConfig | MLflowConfig | DatabricksConfig | TencentConfig | null
   onRemoved: () => void
   onCancel: () => void
-  onSaved: (payload: ArizeConfig | PhoenixConfig | LangSmithConfig | LangFuseConfig | OpikConfig | WeaveConfig | AliyunConfig | MLflowConfig | DatabricksConfig | TencentConfig) => void
+  onSaved: (payload: ArizeConfig | PhoenixConfig | LogfireConfig | LangSmithConfig | LangFuseConfig | OpikConfig | WeaveConfig | AliyunConfig | MLflowConfig | DatabricksConfig | TencentConfig) => void
   onChosen: (provider: TracingProvider) => void
 }
 
@@ -41,6 +41,13 @@ const arizeConfigTemplate = {
 
 const phoenixConfigTemplate = {
   api_key: '',
+  project: '',
+  endpoint: '',
+}
+
+const logfireConfigTemplate = {
+  write_token: '',
+  organization: '',
   project: '',
   endpoint: '',
 }
@@ -112,7 +119,7 @@ const ProviderConfigModal: FC<Props> = ({
   const isEdit = !!payload
   const isAdd = !isEdit
   const [isSaving, setIsSaving] = useState(false)
-  const [config, setConfig] = useState<ArizeConfig | PhoenixConfig | LangSmithConfig | LangFuseConfig | OpikConfig | WeaveConfig | AliyunConfig | MLflowConfig | DatabricksConfig | TencentConfig>((() => {
+  const [config, setConfig] = useState<ArizeConfig | PhoenixConfig | LogfireConfig | LangSmithConfig | LangFuseConfig | OpikConfig | WeaveConfig | AliyunConfig | MLflowConfig | DatabricksConfig | TencentConfig>((() => {
     if (isEdit)
       return payload
 
@@ -121,6 +128,9 @@ const ProviderConfigModal: FC<Props> = ({
 
     else if (type === TracingProvider.phoenix)
       return phoenixConfigTemplate
+
+    else if (type === TracingProvider.logfire)
+      return logfireConfigTemplate
 
     else if (type === TracingProvider.langSmith)
       return langSmithConfigTemplate
@@ -190,6 +200,12 @@ const ProviderConfigModal: FC<Props> = ({
         errorMessage = t('errorMsg.fieldRequired', { ns: 'common', field: 'API Key' })
       if (!errorMessage && !postData.project)
         errorMessage = t('errorMsg.fieldRequired', { ns: 'common', field: t(`${I18N_PREFIX}.project`, { ns: 'app' }) })
+    }
+
+    if (type === TracingProvider.logfire) {
+      const postData = config as LogfireConfig
+      if (!postData.write_token)
+        errorMessage = t('errorMsg.fieldRequired', { ns: 'common', field: 'Write Token' })
     }
 
     if (type === TracingProvider.langSmith) {
@@ -368,6 +384,39 @@ const ProviderConfigModal: FC<Props> = ({
                               value={(config as PhoenixConfig).endpoint}
                               onChange={handleConfigChange('endpoint')}
                               placeholder="https://app.phoenix.arize.com"
+                            />
+                          </>
+                        )}
+                        {type === TracingProvider.logfire && (
+                          <>
+                            <Field
+                              label="Write Token"
+                              labelClassName="!text-sm"
+                              isRequired
+                              value={(config as LogfireConfig).write_token}
+                              onChange={handleConfigChange('write_token')}
+                              placeholder={t(`${I18N_PREFIX}.placeholder`, { ns: 'app', key: 'Write Token' })!}
+                            />
+                            <Field
+                              label="Organization"
+                              labelClassName="!text-sm"
+                              value={(config as LogfireConfig).organization}
+                              onChange={handleConfigChange('organization')}
+                              placeholder="your-org"
+                            />
+                            <Field
+                              label={t(`${I18N_PREFIX}.project`, { ns: 'app' })!}
+                              labelClassName="!text-sm"
+                              value={(config as LogfireConfig).project}
+                              onChange={handleConfigChange('project')}
+                              placeholder="your-project"
+                            />
+                            <Field
+                              label="Endpoint"
+                              labelClassName="!text-sm"
+                              value={(config as LogfireConfig).endpoint}
+                              onChange={handleConfigChange('endpoint')}
+                              placeholder="https://logfire-api.pydantic.dev/v1/traces"
                             />
                           </>
                         )}

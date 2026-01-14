@@ -54,6 +54,15 @@ class OpsService:
             except Exception:
                 new_decrypt_tracing_config.update({"project_url": "https://app.phoenix.arize.com/projects/"})
 
+        if tracing_provider == "logfire" and (
+            "project_url" not in decrypt_tracing_config or not decrypt_tracing_config.get("project_url")
+        ):
+            try:
+                project_url = OpsTraceManager.get_trace_config_project_url(decrypt_tracing_config, tracing_provider)
+                new_decrypt_tracing_config.update({"project_url": project_url})
+            except Exception:
+                new_decrypt_tracing_config.update({"project_url": "https://logfire.pydantic.dev/"})
+
         if tracing_provider == "langfuse" and (
             "project_key" not in decrypt_tracing_config or not decrypt_tracing_config.get("project_key")
         ):
@@ -173,7 +182,7 @@ class OpsService:
                 project_url = f"{tracing_config.get('host')}/project/{project_key}"
             except Exception:
                 project_url = None
-        elif tracing_provider in ("langsmith", "opik", "mlflow", "databricks", "tencent"):
+        elif tracing_provider in ("langsmith", "opik", "mlflow", "databricks", "tencent", "logfire"):
             try:
                 project_url = OpsTraceManager.get_trace_config_project_url(tracing_config, tracing_provider)
             except Exception:

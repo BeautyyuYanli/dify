@@ -1,6 +1,6 @@
 'use client'
 import type { FC } from 'react'
-import type { AliyunConfig, ArizeConfig, DatabricksConfig, LangFuseConfig, LangSmithConfig, MLflowConfig, OpikConfig, PhoenixConfig, TencentConfig, WeaveConfig } from './type'
+import type { AliyunConfig, ArizeConfig, DatabricksConfig, LangFuseConfig, LangSmithConfig, LogfireConfig, MLflowConfig, OpikConfig, PhoenixConfig, TencentConfig, WeaveConfig } from './type'
 import type { TracingStatus } from '@/models/app'
 import {
   RiArrowDownDoubleLine,
@@ -12,7 +12,7 @@ import * as React from 'react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Divider from '@/app/components/base/divider'
-import { AliyunIcon, ArizeIcon, DatabricksIcon, LangfuseIcon, LangsmithIcon, MlflowIcon, OpikIcon, PhoenixIcon, TencentIcon, WeaveIcon } from '@/app/components/base/icons/src/public/tracing'
+import { AliyunIcon, ArizeIcon, DatabricksIcon, LangfuseIcon, LangsmithIcon, LogfireIcon, MlflowIcon, OpikIcon, PhoenixIcon, TencentIcon, WeaveIcon } from '@/app/components/base/icons/src/public/tracing'
 import Loading from '@/app/components/base/loading'
 import Toast from '@/app/components/base/toast'
 import Indicator from '@/app/components/header/indicator'
@@ -67,6 +67,7 @@ const Panel: FC = () => {
   const providerIconMap: Record<TracingProvider, React.FC<{ className?: string }>> = {
     [TracingProvider.arize]: ArizeIcon,
     [TracingProvider.phoenix]: PhoenixIcon,
+    [TracingProvider.logfire]: LogfireIcon,
     [TracingProvider.langSmith]: LangsmithIcon,
     [TracingProvider.langfuse]: LangfuseIcon,
     [TracingProvider.opik]: OpikIcon,
@@ -80,6 +81,7 @@ const Panel: FC = () => {
 
   const [arizeConfig, setArizeConfig] = useState<ArizeConfig | null>(null)
   const [phoenixConfig, setPhoenixConfig] = useState<PhoenixConfig | null>(null)
+  const [logfireConfig, setLogfireConfig] = useState<LogfireConfig | null>(null)
   const [langSmithConfig, setLangSmithConfig] = useState<LangSmithConfig | null>(null)
   const [langFuseConfig, setLangFuseConfig] = useState<LangFuseConfig | null>(null)
   const [opikConfig, setOpikConfig] = useState<OpikConfig | null>(null)
@@ -88,7 +90,7 @@ const Panel: FC = () => {
   const [mlflowConfig, setMLflowConfig] = useState<MLflowConfig | null>(null)
   const [databricksConfig, setDatabricksConfig] = useState<DatabricksConfig | null>(null)
   const [tencentConfig, setTencentConfig] = useState<TencentConfig | null>(null)
-  const hasConfiguredTracing = !!(langSmithConfig || langFuseConfig || opikConfig || weaveConfig || arizeConfig || phoenixConfig || aliyunConfig || mlflowConfig || databricksConfig || tencentConfig)
+  const hasConfiguredTracing = !!(langSmithConfig || langFuseConfig || opikConfig || weaveConfig || arizeConfig || phoenixConfig || logfireConfig || aliyunConfig || mlflowConfig || databricksConfig || tencentConfig)
 
   const fetchTracingConfig = async () => {
     const getArizeConfig = async () => {
@@ -100,6 +102,11 @@ const Panel: FC = () => {
       const { tracing_config: phoenixConfig, has_not_configured: phoenixHasNotConfig } = await doFetchTracingConfig({ appId, provider: TracingProvider.phoenix })
       if (!phoenixHasNotConfig)
         setPhoenixConfig(phoenixConfig as PhoenixConfig)
+    }
+    const getLogfireConfig = async () => {
+      const { tracing_config: logfireConfig, has_not_configured: logfireHasNotConfig } = await doFetchTracingConfig({ appId, provider: TracingProvider.logfire })
+      if (!logfireHasNotConfig)
+        setLogfireConfig(logfireConfig as LogfireConfig)
     }
     const getLangSmithConfig = async () => {
       const { tracing_config: langSmithConfig, has_not_configured: langSmithHasNotConfig } = await doFetchTracingConfig({ appId, provider: TracingProvider.langSmith })
@@ -144,6 +151,7 @@ const Panel: FC = () => {
     Promise.all([
       getArizeConfig(),
       getPhoenixConfig(),
+      getLogfireConfig(),
       getLangSmithConfig(),
       getLangFuseConfig(),
       getOpikConfig(),
@@ -162,6 +170,8 @@ const Panel: FC = () => {
       setArizeConfig(tracing_config as ArizeConfig)
     else if (provider === TracingProvider.phoenix)
       setPhoenixConfig(tracing_config as PhoenixConfig)
+    else if (provider === TracingProvider.logfire)
+      setLogfireConfig(tracing_config as LogfireConfig)
     else if (provider === TracingProvider.langSmith)
       setLangSmithConfig(tracing_config as LangSmithConfig)
     else if (provider === TracingProvider.langfuse)
@@ -181,6 +191,8 @@ const Panel: FC = () => {
       setArizeConfig(null)
     else if (provider === TracingProvider.phoenix)
       setPhoenixConfig(null)
+    else if (provider === TracingProvider.logfire)
+      setLogfireConfig(null)
     else if (provider === TracingProvider.langSmith)
       setLangSmithConfig(null)
     else if (provider === TracingProvider.langfuse)
@@ -237,6 +249,7 @@ const Panel: FC = () => {
           onChooseProvider={handleChooseProvider}
           arizeConfig={arizeConfig}
           phoenixConfig={phoenixConfig}
+          logfireConfig={logfireConfig}
           langSmithConfig={langSmithConfig}
           langFuseConfig={langFuseConfig}
           opikConfig={opikConfig}
@@ -276,6 +289,7 @@ const Panel: FC = () => {
           onChooseProvider={handleChooseProvider}
           arizeConfig={arizeConfig}
           phoenixConfig={phoenixConfig}
+          logfireConfig={logfireConfig}
           langSmithConfig={langSmithConfig}
           langFuseConfig={langFuseConfig}
           opikConfig={opikConfig}

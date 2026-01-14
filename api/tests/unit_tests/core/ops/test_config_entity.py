@@ -6,6 +6,7 @@ from core.ops.entities.config_entity import (
     ArizeConfig,
     LangfuseConfig,
     LangSmithConfig,
+    LogfireConfig,
     OpikConfig,
     PhoenixConfig,
     TracingProviderEnum,
@@ -20,6 +21,7 @@ class TestTracingProviderEnum:
         """Test that all expected enum values are present"""
         assert TracingProviderEnum.ARIZE == "arize"
         assert TracingProviderEnum.PHOENIX == "phoenix"
+        assert TracingProviderEnum.LOGFIRE == "logfire"
         assert TracingProviderEnum.LANGFUSE == "langfuse"
         assert TracingProviderEnum.LANGSMITH == "langsmith"
         assert TracingProviderEnum.OPIK == "opik"
@@ -110,6 +112,40 @@ class TestPhoenixConfig:
         """Test endpoint validation without path"""
         config = PhoenixConfig(endpoint="https://app.phoenix.arize.com")
         assert config.endpoint == "https://app.phoenix.arize.com"
+
+
+class TestLogfireConfig:
+    """Test cases for LogfireConfig"""
+
+    def test_valid_config(self):
+        """Test valid Logfire configuration"""
+        config = LogfireConfig(
+            write_token="test_token",
+            organization="my_org",
+            project="my_project",
+            endpoint="https://logfire-us.pydantic.dev/v1/traces",
+        )
+        assert config.write_token == "test_token"
+        assert config.organization == "my_org"
+        assert config.project == "my_project"
+        assert config.endpoint == "https://logfire-us.pydantic.dev/v1/traces"
+
+    def test_default_values(self):
+        """Test default values are set correctly"""
+        config = LogfireConfig(write_token="test_token")
+        assert config.organization is None
+        assert config.project is None
+        assert config.endpoint == "https://logfire-api.pydantic.dev/v1/traces"
+
+    def test_endpoint_validation_empty(self):
+        """Test endpoint validation with empty value uses default"""
+        config = LogfireConfig(write_token="test_token", endpoint="")
+        assert config.endpoint == "https://logfire-api.pydantic.dev/v1/traces"
+
+    def test_endpoint_validation_invalid_scheme(self):
+        """Test endpoint validation rejects invalid schemes"""
+        with pytest.raises(ValidationError, match="URL must start with https:// or http://"):
+            LogfireConfig(write_token="test_token", endpoint="ftp://invalid.example.com/v1/traces")
 
 
 class TestLangfuseConfig:
@@ -376,6 +412,7 @@ class TestConfigIntegration:
         configs = [
             ArizeConfig(api_key="key"),
             PhoenixConfig(api_key="key"),
+            LogfireConfig(write_token="token"),
             LangfuseConfig(public_key="public", secret_key="secret"),
             LangSmithConfig(api_key="key", project="project"),
             OpikConfig(api_key="key"),

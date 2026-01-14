@@ -1,6 +1,7 @@
 export enum TracingProvider {
   arize = 'arize',
   phoenix = 'phoenix',
+  logfire = 'logfire',
   langSmith = 'langsmith',
   langfuse = 'langfuse',
   opik = 'opik',
@@ -20,6 +21,13 @@ export type ArizeConfig = {
 
 export type PhoenixConfig = {
   api_key: string
+  project: string
+  endpoint: string
+}
+
+export type LogfireConfig = {
+  write_token: string
+  organization: string
   project: string
   endpoint: string
 }

@@ -253,6 +253,8 @@
   "tracing.langfuse.title": "Langfuse",
   "tracing.langsmith.description": "An all-in-one developer platform for every step of the LLM-powered application lifecycle.",
   "tracing.langsmith.title": "LangSmith",
+  "tracing.logfire.description": "Pydantic Logfire is an OpenTelemetry-native observability platform. Configure a write token to export traces via OTLP.",
+  "tracing.logfire.title": "Logfire",
   "tracing.mlflow.description": "MLflow is an open-source platform for experiment management, evaluation, and monitoring of LLM applications.",
   "tracing.mlflow.title": "MLflow",
   "tracing.opik.description": "Opik is an open-source platform for evaluating, testing, and monitoring LLM applications.",
