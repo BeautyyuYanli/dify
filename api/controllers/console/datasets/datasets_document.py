@@ -203,6 +203,51 @@ class DocumentResource(Resource):
 
         return document
 
+    def get_documents_by_ids(
+        self,
+        dataset_id: str,
+        document_ids: Sequence[str],
+        *,
+        current_user: Any | None = None,
+        current_tenant_id: str | None = None,
+    ) -> dict[str, Document]:
+        """
+        Batch load documents by ids with dataset permission + tenant validation.
+
+        This helper avoids the N+1 query pattern where controllers fetch a Document and its
+        UploadFile inside a per-id loop.
+        """
+        if current_user is None or current_tenant_id is None:
+            current_user, current_tenant_id = current_account_with_tenant()
+
+        dataset = DatasetService.get_dataset(dataset_id)
+        if not dataset:
+            raise NotFound("Dataset not found.")
+
+        try:
+            DatasetService.check_dataset_permission(dataset, current_user)
+        except services.errors.account.NoPermissionError as e:
+            raise Forbidden(str(e))
+
+        requested_ids = [str(document_id) for document_id in document_ids]
+        # Query by unique ids; callers may send duplicate ids and we still want them to work.
+        requested_unique_ids = set(requested_ids)
+
+        documents = DocumentService.get_documents_by_dataset_and_ids(dataset_id, list(requested_unique_ids))
+        documents_by_id = {str(document.id): document for document in documents}
+
+        # Ensure every requested id exists in this dataset.
+        missing_ids = requested_unique_ids - documents_by_id.keys()
+        if missing_ids:
+            raise NotFound("Document not found.")
+
+        # Enforce tenant isolation for every document in the batch.
+        for document in documents_by_id.values():
+            if document.tenant_id != current_tenant_id:
+                raise Forbidden("No permission.")
+
+        return documents_by_id
+
     def get_batch_documents(self, dataset_id: str, batch: str) -> Sequence[Document]:
         current_user, _ = current_account_with_tenant()
         dataset = DatasetService.get_dataset(dataset_id)
@@ -935,7 +980,7 @@ class DocumentDownloadApi(DocumentResource):
 
 
 @console_ns.route("/datasets/<uuid:dataset_id>/documents/download-zip")
-class DocumentBatchDownloadZipApi(Resource):
+class DocumentBatchDownloadZipApi(DocumentResource):
     """Download multiple uploaded-file documents as a single ZIP (avoids browser multi-download limits)."""
 
     @console_ns.doc("download_dataset_documents_as_zip")
@@ -952,14 +997,29 @@ class DocumentBatchDownloadZipApi(Resource):
         current_user, current_tenant_id = current_account_with_tenant()
         dataset_id = str(dataset_id)
 
-        # Validate dataset existence and permissions (once for the whole batch).
-        dataset = DatasetService.get_dataset(dataset_id)
-        if not dataset:
-            raise NotFound("Dataset not found.")
-        try:
-            DatasetService.check_dataset_permission(dataset, current_user)
-        except services.errors.account.NoPermissionError as e:
-            raise Forbidden(str(e))
+        # Batch fetch documents (single query) and validate dataset permission + tenant isolation.
+        documents_by_id = self.get_documents_by_ids(
+            dataset_id,
+            payload.document_ids,
+            current_user=current_user,
+            current_tenant_id=current_tenant_id,
+        )
+
+        # Validate all documents are upload-file backed and collect UploadFile ids.
+        upload_file_ids: set[str] = set()
+        for document_id in payload.document_ids:
+            document = documents_by_id[str(document_id)]
+            if document.data_source_type != "upload_file":
+                raise NotFound("Only uploaded-file documents can be downloaded as ZIP.")
+            data_source_info: dict[str, Any] = document.data_source_info_dict or {}
+            upload_file_id = data_source_info.get("upload_file_id")
+            if not upload_file_id:
+                raise NotFound("Only uploaded-file documents can be downloaded as ZIP.")
+            upload_file_ids.add(str(upload_file_id))
+
+        # Batch fetch UploadFiles (single query) and build lookup map.
+        upload_files = DocumentService.get_upload_files_by_ids(current_tenant_id, list(upload_file_ids))
+        upload_files_by_id = {str(upload_file.id): upload_file for upload_file in upload_files}
 
         used_names: set[str] = set()
 
@@ -977,16 +1037,11 @@ class DocumentBatchDownloadZipApi(Resource):
                 for document_id in payload.document_ids:
                     document_id = str(document_id)
 
-                    # Fetch document and enforce tenant isolation.
-                    document = DocumentService.get_document(dataset_id, document_id)
-                    if not document:
-                        raise NotFound("Document not found.")
-                    if document.tenant_id != current_tenant_id:
-                        raise Forbidden("No permission.")
-
-                    try:
-                        upload_file = _get_upload_file_from_upload_file_document(document)
-                    except NotFound:
+                    document = documents_by_id[document_id]
+                    data_source_info = document.data_source_info_dict or {}
+                    upload_file_id = str(data_source_info.get("upload_file_id"))
+                    upload_file = upload_files_by_id.get(upload_file_id)
+                    if not upload_file:
                         # Provide a clearer message for the batch ZIP endpoint.
                         raise NotFound("Only uploaded-file documents can be downloaded as ZIP.")
 

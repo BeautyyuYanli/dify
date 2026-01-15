@@ -1289,6 +1289,26 @@ class DocumentService:
             return None
 
     @staticmethod
+    def get_documents_by_dataset_and_ids(dataset_id: str, document_ids: Sequence[str]) -> Sequence[Document]:
+        """
+        Batch fetch documents scoped to a dataset.
+
+        This is used by endpoints that need to load many documents at once (e.g. batch download)
+        to avoid N+1 query patterns.
+        """
+        # Avoid generating an invalid `IN ()` clause.
+        if not document_ids:
+            return []
+
+        unique_ids = list({str(document_id) for document_id in document_ids})
+        return db.session.scalars(
+            select(Document).where(
+                Document.dataset_id == dataset_id,
+                Document.id.in_(unique_ids),
+            )
+        ).all()
+
+    @staticmethod
     def get_document_by_id(document_id: str) -> Document | None:
         document = db.session.query(Document).where(Document.id == document_id).first()
 
@@ -1354,6 +1374,26 @@ class DocumentService:
     def get_document_file_detail(file_id: str):
         file_detail = db.session.query(UploadFile).where(UploadFile.id == file_id).one_or_none()
         return file_detail
+
+    @staticmethod
+    def get_upload_files_by_ids(tenant_id: str, upload_file_ids: Sequence[str]) -> Sequence[UploadFile]:
+        """
+        Batch fetch upload files scoped to a tenant.
+
+        This complements `get_documents_by_dataset_and_ids()` for bulk operations that need
+        the underlying uploaded files for many documents.
+        """
+        # Avoid generating an invalid `IN ()` clause.
+        if not upload_file_ids:
+            return []
+
+        unique_ids = list({str(upload_file_id) for upload_file_id in upload_file_ids})
+        return db.session.scalars(
+            select(UploadFile).where(
+                UploadFile.tenant_id == tenant_id,
+                UploadFile.id.in_(unique_ids),
+            )
+        ).all()
 
     @staticmethod
     def check_archived(document):
