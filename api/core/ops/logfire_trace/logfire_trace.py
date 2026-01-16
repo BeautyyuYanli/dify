@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import time
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -26,7 +27,7 @@ from opentelemetry import trace as trace_api
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter as HttpOTLPSpanExporter
 from opentelemetry.sdk import trace as trace_sdk
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.semconv.resource import ResourceAttributes
 from opentelemetry.trace import (
     NonRecordingSpan,
@@ -54,6 +55,59 @@ from core.ops.entities.trace_entity import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _build_minimal_otlp_trace_payload(*, service_name: str) -> bytes:
+    """
+    Build a minimal OTLP/HTTP protobuf payload for Logfire connectivity checks.
+
+    Logfire validates that request bodies decode as an `ExportTraceServiceRequest` protobuf.
+    An empty request body will be rejected (commonly as 4xx like 422).
+    """
+    # Import OTEL protobuf models lazily to keep import overhead minimal.
+    from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
+    from opentelemetry.proto.common.v1.common_pb2 import AnyValue, InstrumentationScope, KeyValue
+    from opentelemetry.proto.resource.v1.resource_pb2 import Resource as OtelResource
+    from opentelemetry.proto.trace.v1.trace_pb2 import ResourceSpans, ScopeSpans
+    from opentelemetry.proto.trace.v1.trace_pb2 import Span as OtelSpan
+
+    now_ns = time.time_ns()
+
+    # Deterministic-enough IDs; must be correct lengths (trace_id=16 bytes, span_id=8 bytes).
+    trace_id = hashlib.sha256(f"{service_name}:{now_ns}".encode()).digest()[:16]
+    span_id = hashlib.sha256(f"{service_name}:{now_ns}:span".encode()).digest()[:8]
+
+    # Include `service.name` since it’s a widely expected OTEL resource attribute.
+    resource = OtelResource(
+        attributes=[
+            KeyValue(key="service.name", value=AnyValue(string_value=service_name)),
+        ]
+    )
+
+    span = OtelSpan(
+        trace_id=trace_id,
+        span_id=span_id,
+        name="dify.logfire.api_check",
+        kind=OtelSpan.SpanKind.SPAN_KIND_INTERNAL,
+        start_time_unix_nano=now_ns,
+        end_time_unix_nano=now_ns + 1,
+    )
+
+    request = ExportTraceServiceRequest(
+        resource_spans=[
+            ResourceSpans(
+                resource=resource,
+                scope_spans=[
+                    ScopeSpans(
+                        scope=InstrumentationScope(name="dify.logfire"),
+                        spans=[span],
+                    )
+                ],
+            )
+        ]
+    )
+
+    return request.SerializeToString()
 
 
 def _normalize_logfire_traces_endpoint(endpoint: str) -> str:
@@ -171,7 +225,7 @@ class LogfireDataTrace(BaseTraceInstance):
     # --- typed members (declare in class, assign in __init__) ---
     logfire_config: LogfireConfig
     tracer: trace_sdk.Tracer
-    span_processor: BatchSpanProcessor
+    span_processor: SimpleSpanProcessor
 
     def __init__(self, logfire_config: LogfireConfig):
         """Initialize OTLP exporter + tracer for Logfire."""
@@ -204,8 +258,8 @@ class LogfireDataTrace(BaseTraceInstance):
         # Use a per-instance tracer provider so config changes do not require process restart.
         provider = trace_sdk.TracerProvider(resource=resource)
 
-        # Batch export for lower overhead.
-        self.span_processor = BatchSpanProcessor(exporter)
+        # Export spans immediately (no background worker thread).
+        self.span_processor = SimpleSpanProcessor(exporter)
         provider.add_span_processor(self.span_processor)
 
         # Create a named tracer (do not overwrite global provider).
@@ -277,14 +331,17 @@ class LogfireDataTrace(BaseTraceInstance):
         """
         Validate that the endpoint is reachable and the token is accepted.
 
-        We send an empty OTLP payload. Logfire typically returns a 4xx for invalid body,
-        but 401/403 indicates invalid credentials.
+        Logfire behaves as an OTLP/HTTP server and requires requests to contain a valid
+        protobuf-encoded `ExportTraceServiceRequest`. Sending an empty payload will fail.
         """
         traces_endpoint = _normalize_logfire_traces_endpoint(self.logfire_config.endpoint)
         try:
             parsed = urlparse(traces_endpoint)
             if parsed.scheme not in {"https", "http"}:
                 raise ValueError("Endpoint URL must start with https:// or http://")
+
+            service_name = str(dify_config.APPLICATION_NAME or "dify")
+            payload = _build_minimal_otlp_trace_payload(service_name=service_name)
 
             response = httpx.post(
                 traces_endpoint,
@@ -293,12 +350,14 @@ class LogfireDataTrace(BaseTraceInstance):
                     # OTLP/HTTP uses protobuf content type.
                     "Content-Type": "application/x-protobuf",
                 },
-                content=b"",
+                content=payload,
                 timeout=5.0,
             )
+            if response.status_code == 200:
+                return True
             if response.status_code in (401, 403):
                 return False
-            return True
+            raise ValueError(f"Logfire API check failed: {response.status_code} {response.text}")
         except httpx.RequestError as exc:
             raise ValueError(f"Logfire API check failed: {exc}") from exc
 
