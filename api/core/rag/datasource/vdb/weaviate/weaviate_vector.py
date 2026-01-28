@@ -191,12 +191,12 @@ class WeaviateVector(BaseVector):
                         properties=[
                             wc.Property(
                                 name=Field.TEXT_KEY.value,
-                                data_type=wc.DataType.TEXT,
+                                dataType=wc.DataType.TEXT,
                                 tokenization=tokenization,
                             ),
-                            wc.Property(name="document_id", data_type=wc.DataType.TEXT),
-                            wc.Property(name="doc_id", data_type=wc.DataType.TEXT),
-                            wc.Property(name="chunk_index", data_type=wc.DataType.INT),
+                            wc.Property(name="document_id", dataType=wc.DataType.TEXT),
+                            wc.Property(name="doc_id", dataType=wc.DataType.TEXT),
+                            wc.Property(name="chunk_index", dataType=wc.DataType.INT),
                         ],
                         vector_config=wc.Configure.Vectors.self_provided(),
                     )
@@ -222,11 +222,11 @@ class WeaviateVector(BaseVector):
 
         to_add = []
         if "document_id" not in existing:
-            to_add.append(wc.Property(name="document_id", data_type=wc.DataType.TEXT))
+            to_add.append(wc.Property(name="document_id", dataType=wc.DataType.TEXT))
         if "doc_id" not in existing:
-            to_add.append(wc.Property(name="doc_id", data_type=wc.DataType.TEXT))
+            to_add.append(wc.Property(name="doc_id", dataType=wc.DataType.TEXT))
         if "chunk_index" not in existing:
-            to_add.append(wc.Property(name="chunk_index", data_type=wc.DataType.INT))
+            to_add.append(wc.Property(name="chunk_index", dataType=wc.DataType.INT))
 
         for prop in to_add:
             try:
@@ -260,7 +260,7 @@ class WeaviateVector(BaseVector):
         metadatas = [d.metadata for d in documents]
 
         col = self._client.collections.use(self._collection_name)
-        objs: list[DataObject] = []
+        objs: list[DataObject[dict[str, Any], None]] = []
         ids_out: list[str] = []
 
         for i, text in enumerate(texts):

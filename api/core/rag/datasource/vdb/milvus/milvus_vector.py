@@ -297,6 +297,16 @@ class MilvusVector(BaseVector):
         """
         Create a new collection in Milvus with the specified schema and index parameters.
         """
+        if index_params is None:
+            index_params = {"metric_type": "IP", "index_type": "HNSW", "params": {"M": 8, "efConstruction": 64}}
+        if not isinstance(index_params, dict):
+            raise TypeError("index_params must be a dict")
+        index_params_dict: dict[str, object] = {}
+        for key, value in index_params.items():
+            if isinstance(key, str):
+                index_params_dict[key] = value
+        index_params = index_params_dict
+
         lock_name = f"vector_indexing_lock_{self._collection_name}"
         with redis_client.lock(lock_name, timeout=20):
             collection_exist_cache_key = f"vector_indexing_{self._collection_name}"
@@ -352,7 +362,18 @@ class MilvusVector(BaseVector):
 
                 # Create Index params for the collection
                 index_params_obj = IndexParams()
-                index_params_obj.add_index(field_name=Field.VECTOR, **index_params)
+                index_type_obj = index_params.get("index_type")
+                index_type = index_type_obj if isinstance(index_type_obj, str) else ""
+                metric_type_obj = index_params.get("metric_type")
+                metric_type = metric_type_obj if isinstance(metric_type_obj, str) else ""
+                params_obj = index_params.get("params")
+                params = params_obj if isinstance(params_obj, dict) else {}
+                index_params_obj.add_index(
+                    field_name=Field.VECTOR,
+                    index_type=index_type,
+                    metric_type=metric_type,
+                    params=params,
+                )
 
                 # Create Sparse Vector Index for the collection
                 if self._hybrid_search_enabled:

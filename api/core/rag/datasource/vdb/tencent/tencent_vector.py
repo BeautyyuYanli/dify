@@ -3,7 +3,7 @@ import logging
 import math
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from tcvdb_text.encoder import BM25Encoder  # type: ignore
 from tcvectordb import RPCVectorDBClient, VectorDBException  # type: ignore
 from tcvectordb.model import document, enum  # type: ignore
@@ -27,13 +27,20 @@ class TencentConfig(BaseModel):
     api_key: str | None = None
     timeout: float = 30
     username: str | None = None
-    database: str | None = None
+    database: str
     index_type: str = "HNSW"
     metric_type: str = "IP"
     shard: int = 1
     replicas: int = 2
     max_upsert_batch_size: int = 128
     enable_hybrid_search: bool = False  # Flag to enable hybrid search
+
+    @field_validator("database")
+    @classmethod
+    def validate_database(cls, value: str) -> str:
+        if not value:
+            raise ValueError("config TENCENT_VECTOR_DB_DATABASE is required")
+        return value
 
     def to_tencent_params(self):
         return {"url": self.url, "username": self.username, "key": self.api_key, "timeout": self.timeout}
@@ -231,9 +238,10 @@ class TencentVector(BaseVector):
 
     def search_by_vector(self, query_vector: list[float], **kwargs: Any) -> list[Document]:
         document_ids_filter = kwargs.get("document_ids_filter")
-        filter = None
+        filter_obj: Filter | None = None
         if document_ids_filter:
-            filter = Filter(Filter.In("metadata.document_id", document_ids_filter))
+            filter_obj = Filter(Filter.In("metadata.document_id", document_ids_filter))
+        filter: Filter | str = filter_obj if filter_obj is not None else ""
         res = self._client.search(
             database_name=self._client_config.database,
             collection_name=self.collection_name,
@@ -249,11 +257,35 @@ class TencentVector(BaseVector):
 
     def search_by_full_text(self, query: str, **kwargs: Any) -> list[Document]:
         document_ids_filter = kwargs.get("document_ids_filter")
-        filter = None
+        filter_obj: Filter | None = None
         if document_ids_filter:
-            filter = Filter(Filter.In("metadata.document_id", document_ids_filter))
+            filter_obj = Filter(Filter.In("metadata.document_id", document_ids_filter))
+        filter: Filter | str = filter_obj if filter_obj is not None else ""
         if not self._enable_hybrid_search:
             return []
+
+        encoded = bm25.encode_queries(query)
+        candidate: object = encoded
+        if (
+            isinstance(encoded, list)
+            and encoded
+            and isinstance(encoded[0], list)
+            and encoded[0]
+            and isinstance(encoded[0][0], list)
+        ):
+            candidate = encoded[0]
+
+        sparse_vector: list[list[int | float]] = []
+        if isinstance(candidate, list):
+            for row in candidate:
+                if not isinstance(row, list):
+                    continue
+                sparse_row: list[int | float] = []
+                for value in row:
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        sparse_row.append(value)
+                sparse_vector.append(sparse_row)
+
         res = self._client.hybrid_search(
             database_name=self._client_config.database,
             collection_name=self.collection_name,
@@ -266,7 +298,7 @@ class TencentVector(BaseVector):
             match=[
                 KeywordSearch(
                     field_name="sparse_vector",
-                    data=bm25.encode_queries(query),
+                    data=sparse_vector,
                 ),
             ],
             rerank=WeightedRerank(
@@ -323,7 +355,7 @@ class TencentVectorFactory(AbstractVectorFactory):
                 api_key=dify_config.TENCENT_VECTOR_DB_API_KEY,
                 timeout=dify_config.TENCENT_VECTOR_DB_TIMEOUT,
                 username=dify_config.TENCENT_VECTOR_DB_USERNAME,
-                database=dify_config.TENCENT_VECTOR_DB_DATABASE,
+                database=dify_config.TENCENT_VECTOR_DB_DATABASE or "",
                 shard=dify_config.TENCENT_VECTOR_DB_SHARD,
                 replicas=dify_config.TENCENT_VECTOR_DB_REPLICAS,
                 enable_hybrid_search=dify_config.TENCENT_VECTOR_DB_ENABLE_HYBRID_SEARCH or False,

@@ -1,7 +1,7 @@
 import json
 import logging
 import math
-from typing import Any, cast
+from typing import Any
 from urllib.parse import urlparse
 
 from elasticsearch import ConnectionError as ElasticsearchConnectionError
@@ -147,8 +147,14 @@ class ElasticSearchVector(BaseVector):
 
     def _get_version(self) -> str:
         info = self._client.info()
-        # remove any suffix like "-SNAPSHOT" from the version string
-        return cast(str, info["version"]["number"]).split("-")[0]
+        version_obj = None
+        if isinstance(info, dict):
+            version_obj = info.get("version")
+        if isinstance(version_obj, dict):
+            number_obj = version_obj.get("number")
+            if isinstance(number_obj, str):
+                return number_obj.split("-")[0]
+        raise ValueError("Failed to read Elasticsearch version from client info()")
 
     def _check_version(self):
         if parse_version(self._version) < parse_version("8.0.0"):
@@ -310,48 +316,104 @@ class ElasticSearchVectorFactory(AbstractVectorFactory):
 
         # Check if ELASTICSEARCH_USE_CLOUD is explicitly set to false (boolean)
         use_cloud_env = config.get("ELASTICSEARCH_USE_CLOUD", False)
-
-        if use_cloud_env is False:
-            # Use regular Elasticsearch with config values
-            config_dict = {
-                "use_cloud": False,
-                "host": config.get("ELASTICSEARCH_HOST", "elasticsearch"),
-                "port": config.get("ELASTICSEARCH_PORT", 9200),
-                "username": config.get("ELASTICSEARCH_USERNAME", "elastic"),
-                "password": config.get("ELASTICSEARCH_PASSWORD", "elastic"),
-            }
-        else:
-            # Check for cloud configuration
-            cloud_url = config.get("ELASTICSEARCH_CLOUD_URL")
-            if cloud_url:
-                config_dict = {
-                    "use_cloud": True,
-                    "cloud_url": cloud_url,
-                    "api_key": config.get("ELASTICSEARCH_API_KEY"),
-                }
-            else:
-                # Fallback to regular Elasticsearch
-                config_dict = {
-                    "use_cloud": False,
-                    "host": config.get("ELASTICSEARCH_HOST", "localhost"),
-                    "port": config.get("ELASTICSEARCH_PORT", 9200),
-                    "username": config.get("ELASTICSEARCH_USERNAME", "elastic"),
-                    "password": config.get("ELASTICSEARCH_PASSWORD", ""),
-                }
-
-        # Common configuration
-        config_dict.update(
-            {
-                "ca_certs": str(config.get("ELASTICSEARCH_CA_CERTS")) if config.get("ELASTICSEARCH_CA_CERTS") else None,
-                "verify_certs": bool(config.get("ELASTICSEARCH_VERIFY_CERTS", False)),
-                "request_timeout": int(config.get("ELASTICSEARCH_REQUEST_TIMEOUT", 100000)),
-                "retry_on_timeout": bool(config.get("ELASTICSEARCH_RETRY_ON_TIMEOUT", True)),
-                "max_retries": int(config.get("ELASTICSEARCH_MAX_RETRIES", 10000)),
-            }
+        use_cloud = (
+            bool(use_cloud_env)
+            if isinstance(use_cloud_env, bool)
+            else str(use_cloud_env).lower() in {"1", "true"}
         )
+
+        ca_certs_obj = config.get("ELASTICSEARCH_CA_CERTS")
+        ca_certs = str(ca_certs_obj) if ca_certs_obj else None
+
+        verify_certs = bool(config.get("ELASTICSEARCH_VERIFY_CERTS", False))
+        retry_on_timeout = bool(config.get("ELASTICSEARCH_RETRY_ON_TIMEOUT", True))
+
+        request_timeout_obj = config.get("ELASTICSEARCH_REQUEST_TIMEOUT", 100000)
+        request_timeout = (
+            int(request_timeout_obj)
+            if isinstance(request_timeout_obj, int) and not isinstance(request_timeout_obj, bool)
+            else 100000
+        )
+
+        max_retries_obj = config.get("ELASTICSEARCH_MAX_RETRIES", 10000)
+        max_retries = (
+            int(max_retries_obj)
+            if isinstance(max_retries_obj, int) and not isinstance(max_retries_obj, bool)
+            else 10000
+        )
+
+        if not use_cloud:
+            host_obj = config.get("ELASTICSEARCH_HOST", "elasticsearch")
+            host = host_obj if isinstance(host_obj, str) else str(host_obj)
+
+            port_obj = config.get("ELASTICSEARCH_PORT", 9200)
+            port = int(port_obj) if isinstance(port_obj, int) and not isinstance(port_obj, bool) else 9200
+
+            username_obj = config.get("ELASTICSEARCH_USERNAME", "elastic")
+            username = username_obj if isinstance(username_obj, str) else str(username_obj)
+
+            password_obj = config.get("ELASTICSEARCH_PASSWORD", "elastic")
+            password = password_obj if isinstance(password_obj, str) else str(password_obj)
+
+            es_config = ElasticSearchConfig(
+                use_cloud=False,
+                host=host,
+                port=port,
+                username=username,
+                password=password,
+                ca_certs=ca_certs,
+                verify_certs=verify_certs,
+                request_timeout=request_timeout,
+                retry_on_timeout=retry_on_timeout,
+                max_retries=max_retries,
+            )
+        else:
+            cloud_url_obj = config.get("ELASTICSEARCH_CLOUD_URL")
+            cloud_url = cloud_url_obj if isinstance(cloud_url_obj, str) else None
+
+            api_key_obj = config.get("ELASTICSEARCH_API_KEY")
+            api_key = api_key_obj if isinstance(api_key_obj, str) else None
+
+            if not cloud_url:
+                # Fallback to regular Elasticsearch
+                host_obj = config.get("ELASTICSEARCH_HOST", "localhost")
+                host = host_obj if isinstance(host_obj, str) else str(host_obj)
+
+                port_obj = config.get("ELASTICSEARCH_PORT", 9200)
+                port = int(port_obj) if isinstance(port_obj, int) and not isinstance(port_obj, bool) else 9200
+
+                username_obj = config.get("ELASTICSEARCH_USERNAME", "elastic")
+                username = username_obj if isinstance(username_obj, str) else str(username_obj)
+
+                password_obj = config.get("ELASTICSEARCH_PASSWORD", "")
+                password = password_obj if isinstance(password_obj, str) else str(password_obj)
+
+                es_config = ElasticSearchConfig(
+                    use_cloud=False,
+                    host=host,
+                    port=port,
+                    username=username,
+                    password=password,
+                    ca_certs=ca_certs,
+                    verify_certs=verify_certs,
+                    request_timeout=request_timeout,
+                    retry_on_timeout=retry_on_timeout,
+                    max_retries=max_retries,
+                )
+            else:
+                es_config = ElasticSearchConfig(
+                    use_cloud=True,
+                    cloud_url=cloud_url,
+                    api_key=api_key,
+                    ca_certs=ca_certs,
+                    verify_certs=verify_certs,
+                    request_timeout=request_timeout,
+                    retry_on_timeout=retry_on_timeout,
+                    max_retries=max_retries,
+                )
 
         return ElasticSearchVector(
             index_name=collection_name,
-            config=ElasticSearchConfig(**config_dict),
+            config=es_config,
             attributes=[],
         )

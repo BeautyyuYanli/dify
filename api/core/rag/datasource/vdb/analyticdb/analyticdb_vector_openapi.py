@@ -20,30 +20,52 @@ class AnalyticdbVectorOpenAPIConfig(BaseModel):
     account: str
     account_password: str
     namespace: str = "dify"
-    namespace_password: str | None = None
+    namespace_password: str
     metrics: str = "cosine"
     read_timeout: int = 60000
 
     @model_validator(mode="before")
     @classmethod
-    def validate_config(cls, values: dict):
-        if not values["access_key_id"]:
-            raise ValueError("config ANALYTICDB_KEY_ID is required")
-        if not values["access_key_secret"]:
-            raise ValueError("config ANALYTICDB_KEY_SECRET is required")
-        if not values["region_id"]:
-            raise ValueError("config ANALYTICDB_REGION_ID is required")
-        if not values["instance_id"]:
-            raise ValueError("config ANALYTICDB_INSTANCE_ID is required")
-        if not values["account"]:
-            raise ValueError("config ANALYTICDB_ACCOUNT is required")
-        if not values["account_password"]:
-            raise ValueError("config ANALYTICDB_PASSWORD is required")
-        if not values["namespace_password"]:
-            raise ValueError("config ANALYTICDB_NAMESPACE_PASSWORD is required")
-        return values
+    def validate_config(cls, values: object) -> object:
+        if not isinstance(values, dict):
+            raise TypeError("AnalyticdbVectorOpenAPIConfig must be initialized with a dict")
 
-    def to_analyticdb_client_params(self):
+        values_dict: dict[str, object] = {}
+        for key, value in values.items():
+            if isinstance(key, str):
+                values_dict[key] = value
+
+        access_key_id = values_dict.get("access_key_id")
+        if not isinstance(access_key_id, str) or not access_key_id:
+            raise ValueError("config ANALYTICDB_KEY_ID is required")
+
+        access_key_secret = values_dict.get("access_key_secret")
+        if not isinstance(access_key_secret, str) or not access_key_secret:
+            raise ValueError("config ANALYTICDB_KEY_SECRET is required")
+
+        region_id = values_dict.get("region_id")
+        if not isinstance(region_id, str) or not region_id:
+            raise ValueError("config ANALYTICDB_REGION_ID is required")
+
+        instance_id = values_dict.get("instance_id")
+        if not isinstance(instance_id, str) or not instance_id:
+            raise ValueError("config ANALYTICDB_INSTANCE_ID is required")
+
+        account = values_dict.get("account")
+        if not isinstance(account, str) or not account:
+            raise ValueError("config ANALYTICDB_ACCOUNT is required")
+
+        account_password = values_dict.get("account_password")
+        if not isinstance(account_password, str) or not account_password:
+            raise ValueError("config ANALYTICDB_PASSWORD is required")
+
+        namespace_password = values_dict.get("namespace_password")
+        if not isinstance(namespace_password, str) or not namespace_password:
+            raise ValueError("config ANALYTICDB_NAMESPACE_PASSWORD is required")
+
+        return values_dict
+
+    def to_analyticdb_client_params(self) -> dict[str, str | int]:
         return {
             "access_key_id": self.access_key_id,
             "access_key_secret": self.access_key_secret,
@@ -61,7 +83,13 @@ class AnalyticdbVectorOpenAPI:
             raise ImportError(_import_err_msg)
         self._collection_name = collection_name.lower()
         self.config = config
-        self._client_config = open_api_models.Config(user_agent="dify", **config.to_analyticdb_client_params())
+        self._client_config = open_api_models.Config(
+            user_agent="dify",
+            access_key_id=config.access_key_id,
+            access_key_secret=config.access_key_secret,
+            region_id=config.region_id,
+            read_timeout=config.read_timeout,
+        )
         self._client = Client(self._client_config)
         self._initialize()
 
@@ -233,13 +261,18 @@ class AnalyticdbVectorOpenAPI:
     def search_by_vector(self, query_vector: list[float], **kwargs: Any) -> list[Document]:
         from alibabacloud_gpdb20160503 import models as gpdb_20160503_models
 
-        document_ids_filter = kwargs.get("document_ids_filter")
+        document_ids_filter_obj = kwargs.get("document_ids_filter")
+        document_ids_filter: list[str] = []
+        if isinstance(document_ids_filter_obj, list) and all(isinstance(i, str) for i in document_ids_filter_obj):
+            document_ids_filter = document_ids_filter_obj
+
         where_clause = ""
         if document_ids_filter:
             document_ids = ", ".join(f"'{id}'" for id in document_ids_filter)
             where_clause += f"metadata_->>'document_id' IN ({document_ids})"
 
-        score_threshold = kwargs.get("score_threshold") or 0.0
+        score_threshold_obj = kwargs.get("score_threshold")
+        score_threshold = float(score_threshold_obj) if isinstance(score_threshold_obj, (int, float)) else 0.0
         request = gpdb_20160503_models.QueryCollectionDataRequest(
             dbinstance_id=self.config.instance_id,
             region_id=self.config.region_id,
@@ -256,27 +289,56 @@ class AnalyticdbVectorOpenAPI:
         response = self._client.query_collection_data(request)
         documents = []
         for match in response.body.matches.match:
-            if match.score >= score_threshold:
-                metadata = json.loads(match.metadata.get("metadata_"))
-                metadata["score"] = match.score
-                doc = Document(
-                    page_content=match.metadata.get("page_content"),
-                    vector=match.values.value,
-                    metadata=metadata,
-                )
-                documents.append(doc)
-        documents = sorted(documents, key=lambda x: x.metadata["score"] if x.metadata else 0, reverse=True)
+            score_obj = match.score
+            if not isinstance(score_obj, (int, float)):
+                continue
+            score = float(score_obj)
+            if score < score_threshold:
+                continue
+
+            match_metadata = match.metadata
+            if not isinstance(match_metadata, dict):
+                continue
+
+            metadata_raw = match_metadata.get("metadata_")
+            metadata: dict[str, Any] = {}
+            if isinstance(metadata_raw, (str, bytes, bytearray)):
+                loaded = json.loads(metadata_raw)
+                if isinstance(loaded, dict):
+                    metadata = loaded
+
+            metadata["score"] = score
+
+            page_content = match_metadata.get("page_content")
+            if not isinstance(page_content, str):
+                continue
+
+            vector: list[float] | None = None
+            values = match.values
+            match_vector = getattr(values, "value", None)
+            if isinstance(match_vector, list) and all(isinstance(v, (int, float)) for v in match_vector):
+                vector = [float(v) for v in match_vector]
+
+            documents.append(Document(page_content=page_content, vector=vector, metadata=metadata))
+
+        documents = sorted(documents, key=lambda x: float(x.metadata.get("score", 0.0)), reverse=True)
         return documents
 
     def search_by_full_text(self, query: str, **kwargs: Any) -> list[Document]:
         from alibabacloud_gpdb20160503 import models as gpdb_20160503_models
 
-        document_ids_filter = kwargs.get("document_ids_filter")
+        document_ids_filter_obj = kwargs.get("document_ids_filter")
+        document_ids_filter: list[str] = []
+        if isinstance(document_ids_filter_obj, list) and all(isinstance(i, str) for i in document_ids_filter_obj):
+            document_ids_filter = document_ids_filter_obj
+
         where_clause = ""
         if document_ids_filter:
             document_ids = ", ".join(f"'{id}'" for id in document_ids_filter)
             where_clause += f"metadata_->>'document_id' IN ({document_ids})"
-        score_threshold = float(kwargs.get("score_threshold") or 0.0)
+
+        score_threshold_obj = kwargs.get("score_threshold")
+        score_threshold = float(score_threshold_obj) if isinstance(score_threshold_obj, (int, float)) else 0.0
         request = gpdb_20160503_models.QueryCollectionDataRequest(
             dbinstance_id=self.config.instance_id,
             region_id=self.config.region_id,
@@ -293,16 +355,39 @@ class AnalyticdbVectorOpenAPI:
         response = self._client.query_collection_data(request)
         documents = []
         for match in response.body.matches.match:
-            if match.score >= score_threshold:
-                metadata = json.loads(match.metadata.get("metadata_"))
-                metadata["score"] = match.score
-                doc = Document(
-                    page_content=match.metadata.get("page_content"),
-                    vector=match.values.value,
-                    metadata=metadata,
-                )
-                documents.append(doc)
-        documents = sorted(documents, key=lambda x: x.metadata["score"] if x.metadata else 0, reverse=True)
+            score_obj = match.score
+            if not isinstance(score_obj, (int, float)):
+                continue
+            score = float(score_obj)
+            if score < score_threshold:
+                continue
+
+            match_metadata = match.metadata
+            if not isinstance(match_metadata, dict):
+                continue
+
+            metadata_raw = match_metadata.get("metadata_")
+            metadata: dict[str, Any] = {}
+            if isinstance(metadata_raw, (str, bytes, bytearray)):
+                loaded = json.loads(metadata_raw)
+                if isinstance(loaded, dict):
+                    metadata = loaded
+
+            metadata["score"] = score
+
+            page_content = match_metadata.get("page_content")
+            if not isinstance(page_content, str):
+                continue
+
+            vector: list[float] | None = None
+            values = match.values
+            match_vector = getattr(values, "value", None)
+            if isinstance(match_vector, list) and all(isinstance(v, (int, float)) for v in match_vector):
+                vector = [float(v) for v in match_vector]
+
+            documents.append(Document(page_content=page_content, vector=vector, metadata=metadata))
+
+        documents = sorted(documents, key=lambda x: float(x.metadata.get("score", 0.0)), reverse=True)
         return documents
 
     def delete(self):
