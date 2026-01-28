@@ -19,10 +19,13 @@ from core.llm_generator.output_parser.structured_output import invoke_llm_with_s
 from core.memory.token_buffer_memory import TokenBufferMemory
 from core.model_manager import ModelInstance, ModelManager
 from core.model_runtime.entities import (
+    AudioPromptMessageContent,
+    DocumentPromptMessageContent,
     ImagePromptMessageContent,
     PromptMessage,
     PromptMessageContentType,
     TextPromptMessageContent,
+    VideoPromptMessageContent,
 )
 from core.model_runtime.entities.llm_entities import (
     LLMResult,
@@ -860,7 +863,7 @@ class LLMNode(Node[LLMNodeData]):
             elif prompt_content_type == list:
                 prompt_content = prompt_content if isinstance(prompt_content, list) else []
                 for content_item in prompt_content:
-                    if content_item.type == PromptMessageContentType.TEXT:
+                    if isinstance(content_item, TextPromptMessageContent):
                         if "#histories#" in content_item.data:
                             content_item.data = content_item.data.replace("#histories#", memory_text)
                         else:
@@ -876,7 +879,7 @@ class LLMNode(Node[LLMNodeData]):
                 elif prompt_content_type == list:
                     prompt_content = prompt_content if isinstance(prompt_content, list) else []
                     for content_item in prompt_content:
-                        if content_item.type == PromptMessageContentType.TEXT:
+                        if isinstance(content_item, TextPromptMessageContent):
                             content_item.data = sys_query + "\n" + content_item.data
                 else:
                     raise ValueError("Invalid prompt content type")
@@ -885,7 +888,7 @@ class LLMNode(Node[LLMNodeData]):
 
         # The sys_files will be deprecated later
         if vision_enabled and sys_files:
-            file_prompts = []
+            file_prompts: list[PromptMessageContentUnionTypes] = []
             for file in sys_files:
                 file_prompt = file_manager.to_prompt_message_content(file, image_detail_config=vision_detail)
                 file_prompts.append(file_prompt)
@@ -896,13 +899,29 @@ class LLMNode(Node[LLMNodeData]):
                 and isinstance(prompt_messages[-1], UserPromptMessage)
                 and isinstance(prompt_messages[-1].content, list)
             ):
-                prompt_messages[-1] = UserPromptMessage(content=file_prompts + prompt_messages[-1].content)
+                existing_prompt_content: list[PromptMessageContentUnionTypes] = []
+                last_content = prompt_messages[-1].content
+                if not isinstance(last_content, list):
+                    raise ValueError("Invalid prompt content type")
+                for item in last_content:
+                    if isinstance(
+                        item,
+                        (
+                            TextPromptMessageContent,
+                            ImagePromptMessageContent,
+                            DocumentPromptMessageContent,
+                            AudioPromptMessageContent,
+                            VideoPromptMessageContent,
+                        ),
+                    ):
+                        existing_prompt_content.append(item)
+                prompt_messages[-1] = UserPromptMessage(content=file_prompts + existing_prompt_content)
             else:
                 prompt_messages.append(UserPromptMessage(content=file_prompts))
 
         # The context_files
         if vision_enabled and context_files:
-            file_prompts = []
+            file_prompts: list[PromptMessageContentUnionTypes] = []
             for file in context_files:
                 file_prompt = file_manager.to_prompt_message_content(file, image_detail_config=vision_detail)
                 file_prompts.append(file_prompt)
@@ -913,7 +932,23 @@ class LLMNode(Node[LLMNodeData]):
                 and isinstance(prompt_messages[-1], UserPromptMessage)
                 and isinstance(prompt_messages[-1].content, list)
             ):
-                prompt_messages[-1] = UserPromptMessage(content=file_prompts + prompt_messages[-1].content)
+                existing_prompt_content: list[PromptMessageContentUnionTypes] = []
+                last_content = prompt_messages[-1].content
+                if not isinstance(last_content, list):
+                    raise ValueError("Invalid prompt content type")
+                for item in last_content:
+                    if isinstance(
+                        item,
+                        (
+                            TextPromptMessageContent,
+                            ImagePromptMessageContent,
+                            DocumentPromptMessageContent,
+                            AudioPromptMessageContent,
+                            VideoPromptMessageContent,
+                        ),
+                    ):
+                        existing_prompt_content.append(item)
+                prompt_messages[-1] = UserPromptMessage(content=file_prompts + existing_prompt_content)
             else:
                 prompt_messages.append(UserPromptMessage(content=file_prompts))
 

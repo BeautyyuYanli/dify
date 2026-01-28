@@ -55,7 +55,7 @@ class DatasourceNode(Node[DatasourceNodeData]):
         datasource_type_segement = variable_pool.get(["sys", SystemVariableKey.DATASOURCE_TYPE])
         if not datasource_type_segement:
             raise DatasourceNodeError("Datasource type is not set")
-        datasource_type = str(datasource_type_segement.value) if datasource_type_segement.value else None
+        datasource_type_str = str(datasource_type_segement.value) if datasource_type_segement.value else None
         datasource_info_segement = variable_pool.get(["sys", SystemVariableKey.DATASOURCE_INFO])
         if not datasource_info_segement:
             raise DatasourceNodeError("Datasource info is not set")
@@ -66,14 +66,15 @@ class DatasourceNode(Node[DatasourceNodeData]):
         # get datasource runtime
         from core.datasource.datasource_manager import DatasourceManager
 
-        if datasource_type is None:
+        if datasource_type_str is None:
             raise DatasourceNodeError("Datasource type is not set")
 
+        datasource_type = DatasourceProviderType.value_of(datasource_type_str)
         datasource_runtime = DatasourceManager.get_datasource_runtime(
             provider_id=f"{node_data.plugin_id}/{node_data.provider_name}",
             datasource_name=node_data.datasource_name or "",
             tenant_id=self.tenant_id,
-            datasource_type=DatasourceProviderType.value_of(datasource_type),
+            datasource_type=datasource_type,
         )
         datasource_info["icon"] = datasource_runtime.get_icon_url(self.tenant_id)
 

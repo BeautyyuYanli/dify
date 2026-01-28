@@ -3,11 +3,11 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from typing import Protocol, cast, final
+from typing import Protocol, final
 
 from core.workflow.enums import ErrorStrategy, NodeExecutionType, NodeState, NodeType
 from core.workflow.nodes.base.node import Node
-from libs.typing import is_str, is_str_dict
+from libs.typing import is_str_dict
 
 from .edge import Edge
 from .validation import get_graph_validator
@@ -113,9 +113,16 @@ class Graph:
         # Prefer START node if available
         start_node_id = None
         for nid in root_candidates:
-            node_data = node_configs_map[nid].get("data")
+            node_data_obj = node_configs_map[nid].get("data")
+            if not isinstance(node_data_obj, dict):
+                continue
+            node_data: dict[str, object] = {}
+            for key, value in node_data_obj.items():
+                if isinstance(key, str):
+                    node_data[key] = value
             if not is_str_dict(node_data):
                 continue
+
             node_type = node_data.get("type")
             if not isinstance(node_type, str):
                 continue
@@ -149,7 +156,7 @@ class Graph:
             source = edge_config.get("source")
             target = edge_config.get("target")
 
-            if not is_str(source) or not is_str(target):
+            if not isinstance(source, str) or not isinstance(target, str):
                 continue
 
             # Create edge
@@ -157,7 +164,7 @@ class Graph:
             edge_counter += 1
 
             source_handle = edge_config.get("sourceHandle", "source")
-            if not is_str(source_handle):
+            if not isinstance(source_handle, str):
                 continue
 
             edge = Edge(
@@ -299,11 +306,28 @@ class Graph:
         :return: graph instance
         """
         # Parse configs
-        edge_configs = graph_config.get("edges", [])
-        node_configs = graph_config.get("nodes", [])
+        edge_configs_obj = graph_config.get("edges", [])
+        node_configs_obj = graph_config.get("nodes", [])
 
-        edge_configs = cast(list[dict[str, object]], edge_configs)
-        node_configs = cast(list[dict[str, object]], node_configs)
+        edge_configs: list[dict[str, object]] = []
+        if isinstance(edge_configs_obj, list):
+            for item in edge_configs_obj:
+                if isinstance(item, dict):
+                    edge_config: dict[str, object] = {}
+                    for key, value in item.items():
+                        if isinstance(key, str):
+                            edge_config[key] = value
+                    edge_configs.append(edge_config)
+
+        node_configs: list[dict[str, object]] = []
+        if isinstance(node_configs_obj, list):
+            for item in node_configs_obj:
+                if isinstance(item, dict):
+                    node_config: dict[str, object] = {}
+                    for key, value in item.items():
+                        if isinstance(key, str):
+                            node_config[key] = value
+                    node_configs.append(node_config)
 
         if not node_configs:
             raise ValueError("Graph must have at least one node")

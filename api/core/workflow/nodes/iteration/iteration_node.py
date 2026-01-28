@@ -87,6 +87,9 @@ class IterationNode(LLMUsageTrackingMixin, Node[IterationNodeData]):
             yield from self._handle_empty_iteration(variable)
             return
 
+        if not isinstance(variable, ArraySegment):
+            raise InvalidIteratorValueError(f"invalid iterator value: {variable}, please provide a list.")
+
         iterator_list_value = self._validate_and_get_iterator_list(variable)
         inputs = {"iterator_selector": iterator_list_value}
 
@@ -168,7 +171,10 @@ class IterationNode(LLMUsageTrackingMixin, Node[IterationNodeData]):
         if not isinstance(iterator_list_value, list):
             raise InvalidIteratorValueError(f"Invalid iterator value: {iterator_list_value}, please provide a list.")
 
-        return cast(list[object], iterator_list_value)
+        result: list[object] = []
+        for item in iterator_list_value:
+            result.append(item)
+        return result
 
     def _validate_start_node(self) -> None:
         if not self.node_data.start_node_id:
@@ -397,7 +403,10 @@ class IterationNode(LLMUsageTrackingMixin, Node[IterationNodeData]):
             return outputs
 
         # Check if all non-None outputs are lists
-        non_none_outputs = [output for output in outputs if output is not None]
+        non_none_outputs: list[object] = []
+        for output in outputs:
+            if output is not None:
+                non_none_outputs.append(output)
         if not non_none_outputs:
             return outputs
 

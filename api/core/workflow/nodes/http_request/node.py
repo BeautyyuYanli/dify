@@ -4,7 +4,8 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from configs import dify_config
-from core.file import File, FileTransferMethod, file_manager
+from core.file import File, FileTransferMethod
+from core.file import file_manager as default_file_manager
 from core.helper import ssrf_proxy
 from core.tools.tool_file_manager import ToolFileManager
 from core.variables.segments import ArrayFileSegment
@@ -47,9 +48,9 @@ class HttpRequestNode(Node[HttpRequestNodeData]):
         graph_init_params: "GraphInitParams",
         graph_runtime_state: "GraphRuntimeState",
         *,
-        http_client: HttpClientProtocol = ssrf_proxy,
+        http_client: HttpClientProtocol | None = None,
         tool_file_manager_factory: Callable[[], ToolFileManager] = ToolFileManager,
-        file_manager: FileManagerProtocol = file_manager,
+        file_manager: FileManagerProtocol | None = None,
     ) -> None:
         super().__init__(
             id=id,
@@ -57,9 +58,15 @@ class HttpRequestNode(Node[HttpRequestNodeData]):
             graph_init_params=graph_init_params,
             graph_runtime_state=graph_runtime_state,
         )
-        self._http_client = http_client
+        resolved_http_client = ssrf_proxy if http_client is None else http_client
+        if not isinstance(resolved_http_client, HttpClientProtocol):
+            raise TypeError("http_client must implement HttpClientProtocol")
+        self._http_client = resolved_http_client
         self._tool_file_manager_factory = tool_file_manager_factory
-        self._file_manager = file_manager
+        resolved_file_manager = default_file_manager if file_manager is None else file_manager
+        if not isinstance(resolved_file_manager, FileManagerProtocol):
+            raise TypeError("file_manager must implement FileManagerProtocol")
+        self._file_manager = resolved_file_manager
 
     @classmethod
     def get_default_config(cls, filters: Mapping[str, object] | None = None) -> Mapping[str, object]:

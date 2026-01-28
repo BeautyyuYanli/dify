@@ -11,7 +11,7 @@ import httpx
 from json_repair import repair_json
 
 from configs import dify_config
-from core.file import file_manager
+from core.file import file_manager as default_file_manager
 from core.file.enums import FileTransferMethod
 from core.helper import ssrf_proxy
 from core.variables.segments import ArrayFileSegment, FileSegment
@@ -79,8 +79,8 @@ class Executor:
         timeout: HttpRequestNodeTimeout,
         variable_pool: VariablePool,
         max_retries: int = dify_config.SSRF_DEFAULT_MAX_RETRIES,
-        http_client: HttpClientProtocol = ssrf_proxy,
-        file_manager: FileManagerProtocol = file_manager,
+        http_client: HttpClientProtocol | None = None,
+        file_manager: FileManagerProtocol | None = None,
     ):
         # If authorization API key is present, convert the API key using the variable pool
         if node_data.authorization.type == "api-key":
@@ -107,8 +107,15 @@ class Executor:
         self.data = None
         self.json = None
         self.max_retries = max_retries
-        self._http_client = http_client
-        self._file_manager = file_manager
+        resolved_http_client = ssrf_proxy if http_client is None else http_client
+        if not isinstance(resolved_http_client, HttpClientProtocol):
+            raise TypeError("http_client must implement HttpClientProtocol")
+        self._http_client = resolved_http_client
+
+        resolved_file_manager = default_file_manager if file_manager is None else file_manager
+        if not isinstance(resolved_file_manager, FileManagerProtocol):
+            raise TypeError("file_manager must implement FileManagerProtocol")
+        self._file_manager = resolved_file_manager
 
         # init template
         self.variable_pool = variable_pool

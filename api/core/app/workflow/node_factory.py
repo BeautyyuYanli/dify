@@ -22,7 +22,7 @@ from core.workflow.nodes.template_transform.template_renderer import (
     Jinja2TemplateRenderer,
 )
 from core.workflow.nodes.template_transform.template_transform_node import TemplateTransformNode
-from libs.typing import is_str, is_str_dict
+from libs.typing import is_str_dict
 
 if TYPE_CHECKING:
     from core.workflow.entities import GraphInitParams
@@ -47,9 +47,9 @@ class DifyNodeFactory(NodeFactory):
         code_providers: Sequence[type[CodeNodeProvider]] | None = None,
         code_limits: CodeNodeLimits | None = None,
         template_renderer: Jinja2TemplateRenderer | None = None,
-        http_request_http_client: HttpClientProtocol = ssrf_proxy,
+        http_request_http_client: HttpClientProtocol | None = None,
         http_request_tool_file_manager_factory: Callable[[], ToolFileManager] = ToolFileManager,
-        http_request_file_manager: FileManagerProtocol = file_manager,
+        http_request_file_manager: FileManagerProtocol | None = None,
     ) -> None:
         self.graph_init_params = graph_init_params
         self.graph_runtime_state = graph_runtime_state
@@ -68,9 +68,15 @@ class DifyNodeFactory(NodeFactory):
             max_object_array_length=dify_config.CODE_MAX_OBJECT_ARRAY_LENGTH,
         )
         self._template_renderer = template_renderer or CodeExecutorJinja2TemplateRenderer()
-        self._http_request_http_client = http_request_http_client
+        resolved_http_client = ssrf_proxy if http_request_http_client is None else http_request_http_client
+        if not isinstance(resolved_http_client, HttpClientProtocol):
+            raise TypeError("http_request_http_client must implement HttpClientProtocol")
+        self._http_request_http_client = resolved_http_client
         self._http_request_tool_file_manager_factory = http_request_tool_file_manager_factory
-        self._http_request_file_manager = http_request_file_manager
+        resolved_file_manager = file_manager if http_request_file_manager is None else http_request_file_manager
+        if not isinstance(resolved_file_manager, FileManagerProtocol):
+            raise TypeError("http_request_file_manager must implement FileManagerProtocol")
+        self._http_request_file_manager = resolved_file_manager
 
     @override
     def create_node(self, node_config: dict[str, object]) -> Node:
@@ -82,17 +88,25 @@ class DifyNodeFactory(NodeFactory):
         :raises ValueError: if node type is unknown or configuration is invalid
         """
         # Get node_id from config
-        node_id = node_config.get("id")
-        if not is_str(node_id):
+        node_id_obj = node_config.get("id")
+        if not isinstance(node_id_obj, str):
             raise ValueError("Node config missing id")
+        node_id = node_id_obj
 
         # Get node type from config
-        node_data = node_config.get("data", {})
+        node_data_obj = node_config.get("data", {})
+        if not isinstance(node_data_obj, dict):
+            raise ValueError(f"Node {node_id} missing data information")
+        node_data: dict[str, object] = {}
+        for key, value in node_data_obj.items():
+            if not isinstance(key, str):
+                raise ValueError(f"Node {node_id} has invalid data keys")
+            node_data[key] = value
         if not is_str_dict(node_data):
             raise ValueError(f"Node {node_id} missing data information")
 
         node_type_str = node_data.get("type")
-        if not is_str(node_type_str):
+        if not isinstance(node_type_str, str):
             raise ValueError(f"Node {node_id} missing or invalid type information")
 
         try:
