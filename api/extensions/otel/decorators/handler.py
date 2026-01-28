@@ -27,7 +27,15 @@ class SpanHandler:
         :param wrapped: The original function being traced
         :return: The span name
         """
-        return f"{wrapped.__module__}.{wrapped.__qualname__}"
+        module = getattr(wrapped, "__module__", None)
+        if not isinstance(module, str) or not module:
+            module = wrapped.__class__.__module__
+
+        qualname = getattr(wrapped, "__qualname__", None)
+        if not isinstance(qualname, str) or not qualname:
+            qualname = getattr(wrapped, "__name__", wrapped.__class__.__name__)
+
+        return f"{module}.{qualname}"
 
     def _extract_arguments(
         self,

@@ -32,8 +32,9 @@ def setup_context_propagation() -> None:
 
 def shutdown_tracer() -> None:
     provider = trace.get_tracer_provider()
-    if hasattr(provider, "force_flush"):
-        provider.force_flush()
+    force_flush = getattr(provider, "force_flush", None)
+    if callable(force_flush):
+        force_flush()
 
 
 def is_celery_worker():

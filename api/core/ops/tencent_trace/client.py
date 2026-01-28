@@ -9,7 +9,6 @@ import json
 import logging
 import os
 import socket
-from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 try:
@@ -17,13 +16,11 @@ try:
 except ImportError:
     from importlib_metadata import version  # type: ignore[import-not-found]
 
-if TYPE_CHECKING:
-    from opentelemetry.metrics import Meter
-    from opentelemetry.metrics._internal.instrument import Histogram
-    from opentelemetry.sdk.metrics.export import MetricReader
-
 from opentelemetry import trace as trace_api
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.metrics import Histogram, Meter
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import MetricReader
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -121,7 +118,6 @@ class TencentTraceClient:
 
         # Metrics exporter and instruments
         try:
-            from opentelemetry.sdk.metrics import Histogram, MeterProvider
             from opentelemetry.sdk.metrics.export import AggregationTemporality, PeriodicExportingMetricReader
 
             protocol = os.getenv("OTEL_EXPORTER_OTLP_PROTOCOL", "").strip().lower()

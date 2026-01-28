@@ -441,17 +441,25 @@ class WeaveDataTrace(BaseTraceInstance):
         return dt
 
     def start_call(self, run_data: WeaveTraceModel, parent_run_id: str | None = None):
-        inputs = run_data.inputs
-        if inputs is None:
+        inputs_obj = run_data.inputs
+        inputs: dict[str, Any] = {}
+        if inputs_obj is None:
             inputs = {}
-        elif not isinstance(inputs, dict):
-            inputs = {"inputs": str(inputs)}
+        elif isinstance(inputs_obj, dict):
+            for key, value in inputs_obj.items():
+                inputs[str(key)] = value
+        else:
+            inputs = {"inputs": str(inputs_obj)}
 
-        attributes = run_data.attributes
-        if attributes is None:
+        attributes_obj = run_data.attributes
+        attributes: dict[str, Any] = {}
+        if attributes_obj is None:
             attributes = {}
-        elif not isinstance(attributes, dict):
-            attributes = {"attributes": str(attributes)}
+        elif isinstance(attributes_obj, dict):
+            for key, value in attributes_obj.items():
+                attributes[str(key)] = value
+        else:
+            attributes = {"attributes": str(attributes_obj)}
 
         start_time = attributes.get("start_time") if isinstance(attributes, dict) else None
         started_at = self._normalize_time(start_time if isinstance(start_time, datetime) else None)
@@ -480,11 +488,15 @@ class WeaveDataTrace(BaseTraceInstance):
         if not call_meta:
             raise ValueError(f"Call with id {run_data.id} not found")
 
-        attributes = run_data.attributes
-        if attributes is None:
+        attributes_obj = run_data.attributes
+        attributes: dict[str, Any] = {}
+        if attributes_obj is None:
             attributes = {}
-        elif not isinstance(attributes, dict):
-            attributes = {"attributes": str(attributes)}
+        elif isinstance(attributes_obj, dict):
+            for key, value in attributes_obj.items():
+                attributes[str(key)] = value
+        else:
+            attributes = {"attributes": str(attributes_obj)}
 
         start_time = attributes.get("start_time") if isinstance(attributes, dict) else None
         end_time = attributes.get("end_time") if isinstance(attributes, dict) else None

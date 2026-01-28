@@ -12,6 +12,7 @@ class Mail:
     def __init__(self):
         self._client = None
         self._default_send_from = None
+        self._mail_type: str | None = None
 
     def is_inited(self) -> bool:
         return self._client is not None
@@ -21,6 +22,7 @@ class Mail:
         if not mail_type:
             logger.warning("MAIL_TYPE is not set")
             return
+        self._mail_type = mail_type
 
         if dify_config.MAIL_DEFAULT_SEND_FROM:
             self._default_send_from = dify_config.MAIL_DEFAULT_SEND_FROM
@@ -86,14 +88,33 @@ class Mail:
         if not html:
             raise ValueError("mail html is not set")
 
-        self._client.send(
-            {
-                "from": from_,
-                "to": to,
-                "subject": subject,
-                "html": html,
-            }
-        )
+        match self._mail_type:
+            case "resend":
+                import resend
+
+                params = resend.Emails.SendParams(
+                    **{
+                        "from": from_,
+                        "to": to,
+                        "subject": subject,
+                        "html": html,
+                    }
+                )
+                resend.Emails.send(params)
+            case "smtp" | "sendgrid":
+                send_method = getattr(self._client, "send", None)
+                if not callable(send_method):
+                    raise TypeError("Mail client does not support send()")
+                send_method(
+                    {
+                        "from": from_,
+                        "to": to,
+                        "subject": subject,
+                        "html": html,
+                    }
+                )
+            case _:
+                raise ValueError(f"Unsupported mail type {self._mail_type}")
 
 
 def is_enabled() -> bool:

@@ -2,7 +2,7 @@ import json
 import logging
 import os
 from datetime import datetime, timedelta
-from typing import Any, cast
+from typing import Any
 
 import mlflow
 from mlflow.entities import Document, Span, SpanEvent, SpanStatusCode, SpanType
@@ -36,6 +36,28 @@ def datetime_to_nanoseconds(dt: datetime | None) -> int | None:
     if dt is None:
         return None
     return int(dt.timestamp() * 1_000_000_000)
+
+
+def _stringify_mlflow_attributes(attributes: dict[str, object]) -> dict[str, str]:
+    """
+    MLflow's fluent tracing API expects `attributes` as `dict[str, str]`.
+    Dify trace metadata contains richer types (dict/list/float/etc.), so we serialize
+    values to strings deterministically.
+    """
+    result: dict[str, str] = {}
+    for key, value in attributes.items():
+        if value is None:
+            continue
+        if isinstance(value, str):
+            result[key] = value
+        elif isinstance(value, (int, float, bool)):
+            result[key] = str(value)
+        else:
+            try:
+                result[key] = json.dumps(value, ensure_ascii=False, default=str)
+            except TypeError:
+                result[key] = str(value)
+    return result
 
 
 class MLflowDataTrace(BaseTraceInstance):
@@ -258,24 +280,31 @@ class MLflowDataTrace(BaseTraceInstance):
         if not trace_info.message_data:
             return
 
-        file_list = cast(list[str], trace_info.file_list) or []
+        file_list: list[str] = []
+        if isinstance(trace_info.file_list, list) and all(isinstance(item, str) for item in trace_info.file_list):
+            file_list = list(trace_info.file_list)
         if message_file_data := trace_info.message_file_data:
             base_url = os.getenv("FILES_URL", "http://127.0.0.1:5001")
             file_list.append(f"{base_url}/{message_file_data.url}")
+
+        raw_attributes: dict[str, object] = {
+            "message_id": trace_info.message_id,
+            "model_provider": trace_info.message_data.model_provider,
+            "model_id": trace_info.message_data.model_id,
+            "conversation_mode": trace_info.conversation_mode,
+            "file_list": file_list,
+            "total_price": trace_info.message_data.total_price,
+        }
+        if isinstance(trace_info.metadata, dict):
+            for key, value in trace_info.metadata.items():
+                if isinstance(key, str):
+                    raw_attributes[key] = value
 
         span = start_span_no_context(
             name=TraceTaskName.MESSAGE_TRACE.value,
             span_type=SpanType.LLM,
             inputs=self._parse_prompts(trace_info.inputs),  # type: ignore[arg-type]
-            attributes={
-                "message_id": trace_info.message_id,  # type: ignore[dict-item]
-                "model_provider": trace_info.message_data.model_provider,
-                "model_id": trace_info.message_data.model_id,
-                "conversation_mode": trace_info.conversation_mode,
-                "file_list": file_list,  # type: ignore[dict-item]
-                "total_price": trace_info.message_data.total_price,
-                **trace_info.metadata,
-            },
+            attributes=_stringify_mlflow_attributes(raw_attributes),
             start_time_ns=datetime_to_nanoseconds(trace_info.start_time),
         )
 
@@ -327,16 +356,17 @@ class MLflowDataTrace(BaseTraceInstance):
         return metadata.get("from_account_id")  # type: ignore[return-value]
 
     def tool_trace(self, trace_info: ToolTraceInfo):
+        raw_attributes: dict[str, object] = {
+            "message_id": trace_info.message_id,
+            "metadata": trace_info.metadata,
+            "tool_config": trace_info.tool_config,
+            "tool_parameters": trace_info.tool_parameters,
+        }
         span = start_span_no_context(
             name=trace_info.tool_name,
             span_type=SpanType.TOOL,
             inputs=trace_info.tool_inputs,  # type: ignore[arg-type]
-            attributes={
-                "message_id": trace_info.message_id,  # type: ignore[dict-item]
-                "metadata": trace_info.metadata,  # type: ignore[dict-item]
-                "tool_config": trace_info.tool_config,  # type: ignore[dict-item]
-                "tool_parameters": trace_info.tool_parameters,  # type: ignore[dict-item]
-            },
+            attributes=_stringify_mlflow_attributes(raw_attributes),
             start_time_ns=datetime_to_nanoseconds(trace_info.start_time),
         )
 
@@ -364,14 +394,12 @@ class MLflowDataTrace(BaseTraceInstance):
             return
 
         start_time = trace_info.start_time or trace_info.message_data.created_at
+        raw_attributes: dict[str, object] = {"message_id": trace_info.message_id, "metadata": trace_info.metadata}
         span = start_span_no_context(
             name=TraceTaskName.MODERATION_TRACE.value,
             span_type=SpanType.TOOL,
             inputs=trace_info.inputs or {},
-            attributes={
-                "message_id": trace_info.message_id,  # type: ignore[dict-item]
-                "metadata": trace_info.metadata,  # type: ignore[dict-item]
-            },
+            attributes=_stringify_mlflow_attributes(raw_attributes),
             start_time_ns=datetime_to_nanoseconds(start_time),
         )
 
@@ -388,14 +416,12 @@ class MLflowDataTrace(BaseTraceInstance):
         if trace_info.message_data is None:
             return
 
+        raw_attributes: dict[str, object] = {"message_id": trace_info.message_id, "metadata": trace_info.metadata}
         span = start_span_no_context(
             name=TraceTaskName.DATASET_RETRIEVAL_TRACE.value,
             span_type=SpanType.RETRIEVER,
             inputs=trace_info.inputs,
-            attributes={
-                "message_id": trace_info.message_id,  # type: ignore[dict-item]
-                "metadata": trace_info.metadata,  # type: ignore[dict-item]
-            },
+            attributes=_stringify_mlflow_attributes(raw_attributes),
             start_time_ns=datetime_to_nanoseconds(trace_info.start_time),
         )
         span.end(outputs={"documents": trace_info.documents}, end_time_ns=datetime_to_nanoseconds(trace_info.end_time))
@@ -407,16 +433,17 @@ class MLflowDataTrace(BaseTraceInstance):
         start_time = trace_info.start_time or trace_info.message_data.created_at
         end_time = trace_info.end_time or trace_info.message_data.updated_at
 
+        raw_attributes: dict[str, object] = {
+            "message_id": trace_info.message_id,
+            "model_provider": trace_info.model_provider,
+            "model_id": trace_info.model_id,
+            "total_tokens": trace_info.total_tokens or 0,
+        }
         span = start_span_no_context(
             name=TraceTaskName.SUGGESTED_QUESTION_TRACE.value,
             span_type=SpanType.TOOL,
             inputs=trace_info.inputs,
-            attributes={
-                "message_id": trace_info.message_id,  # type: ignore[dict-item]
-                "model_provider": trace_info.model_provider,  # type: ignore[dict-item]
-                "model_id": trace_info.model_id,  # type: ignore[dict-item]
-                "total_tokens": trace_info.total_tokens or 0,  # type: ignore[dict-item]
-            },
+            attributes=_stringify_mlflow_attributes(raw_attributes),
             start_time_ns=datetime_to_nanoseconds(start_time),
         )
 
