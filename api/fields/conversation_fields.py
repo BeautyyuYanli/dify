@@ -332,7 +332,18 @@ def extract_model_config(value: object | None) -> dict[str, JSONValue]:
     if value is None:
         return {}
     if isinstance(value, dict):
-        return value
-    if hasattr(value, "to_dict"):
-        return value.to_dict()
+        result: dict[str, JSONValue] = {}
+        for key, val in value.items():
+            if isinstance(key, str):
+                result[key] = val
+        return result
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        obj = to_dict()
+        if isinstance(obj, dict):
+            result: dict[str, JSONValue] = {}
+            for key, val in obj.items():
+                if isinstance(key, str):
+                    result[key] = val
+            return result
     return {}

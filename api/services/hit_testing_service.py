@@ -42,6 +42,45 @@ class HitTestingService:
         # get retrieval model , if the model is not setting , using default
         if not retrieval_model:
             retrieval_model = dataset.retrieval_model or default_retrieval_model
+        if not isinstance(retrieval_model, dict):
+            raise ValueError("retrieval_model must be a dict")
+
+        search_method_obj = retrieval_model.get("search_method", RetrievalMethod.SEMANTIC_SEARCH)
+        if isinstance(search_method_obj, RetrievalMethod):
+            retrieval_method = search_method_obj
+        elif isinstance(search_method_obj, str):
+            retrieval_method = RetrievalMethod(search_method_obj)
+        else:
+            retrieval_method = RetrievalMethod.SEMANTIC_SEARCH
+
+        top_k_obj = retrieval_model.get("top_k", 4)
+        top_k = top_k_obj if isinstance(top_k_obj, int) and not isinstance(top_k_obj, bool) else 4
+
+        score_threshold_enabled = bool(retrieval_model.get("score_threshold_enabled", False))
+        score_threshold_obj = retrieval_model.get("score_threshold", 0.0)
+        if (
+            score_threshold_enabled
+            and isinstance(score_threshold_obj, (int, float))
+            and not isinstance(score_threshold_obj, bool)
+        ):
+            score_threshold: float | None = float(score_threshold_obj)
+        else:
+            score_threshold = 0.0
+
+        reranking_enable = bool(retrieval_model.get("reranking_enable", False))
+        reranking_model_obj = retrieval_model.get("reranking_model")
+        reranking_model = reranking_model_obj if reranking_enable and isinstance(reranking_model_obj, dict) else None
+
+        reranking_mode_obj = retrieval_model.get("reranking_mode")
+        reranking_mode = (
+            reranking_mode_obj
+            if isinstance(reranking_mode_obj, str) and reranking_mode_obj
+            else "reranking_model"
+        )
+
+        weights_obj = retrieval_model.get("weights")
+        weights = weights_obj if isinstance(weights_obj, dict) else None
+
         document_ids_filter = None
         metadata_filtering_conditions = retrieval_model.get("metadata_filtering_conditions", {})
         if metadata_filtering_conditions and query:
@@ -66,19 +105,15 @@ class HitTestingService:
             if metadata_condition and not document_ids_filter:
                 return cls.compact_retrieve_response(query, [])
         all_documents = RetrievalService.retrieve(
-            retrieval_method=RetrievalMethod(retrieval_model.get("search_method", RetrievalMethod.SEMANTIC_SEARCH)),
+            retrieval_method=retrieval_method,
             dataset_id=dataset.id,
             query=query,
             attachment_ids=attachment_ids,
-            top_k=retrieval_model.get("top_k", 4),
-            score_threshold=retrieval_model.get("score_threshold", 0.0)
-            if retrieval_model["score_threshold_enabled"]
-            else 0.0,
-            reranking_model=retrieval_model.get("reranking_model", None)
-            if retrieval_model["reranking_enable"]
-            else None,
-            reranking_mode=retrieval_model.get("reranking_mode") or "reranking_model",
-            weights=retrieval_model.get("weights", None),
+            top_k=top_k,
+            score_threshold=score_threshold,
+            reranking_model=reranking_model,
+            reranking_mode=reranking_mode,
+            weights=weights,
             document_ids_filter=document_ids_filter,
         )
 

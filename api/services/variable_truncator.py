@@ -296,7 +296,26 @@ class VariableTruncator(BaseTruncator):
                 break
 
             remaining_budget = target_size - used_size
-            if item is None or isinstance(item, (str, list, dict, bool, int, float, UpdatedVariable)):
+            if item is None:
+                part_result = self._truncate_json_primitives(None, remaining_budget)
+            elif isinstance(item, (UpdatedVariable, str)):
+                part_result = self._truncate_json_primitives(item, remaining_budget)
+            elif isinstance(item, list):
+                list_item: list[object] = []
+                for element in item:
+                    list_item.append(element)
+                part_result = self._truncate_json_primitives(list_item, remaining_budget)
+            elif isinstance(item, dict):
+                dict_item: dict[str, object] = {}
+                for key, item_value in item.items():
+                    if isinstance(key, str):
+                        dict_item[key] = item_value
+                part_result = self._truncate_json_primitives(dict_item, remaining_budget)
+            elif (
+                isinstance(item, bool)
+                or (isinstance(item, int) and not isinstance(item, bool))
+                or isinstance(item, float)
+            ):
                 part_result = self._truncate_json_primitives(item, remaining_budget)
             else:
                 raise UnknownTypeError(f"got unknown type {type(item)} in array truncation")

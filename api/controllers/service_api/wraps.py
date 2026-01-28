@@ -11,6 +11,7 @@ from flask_login import user_logged_in
 from flask_restx import Resource
 from pydantic import BaseModel
 from sqlalchemy import select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 from werkzeug.exceptions import Forbidden, NotFound, Unauthorized
 
@@ -324,7 +325,7 @@ def validate_and_get_api_token(scope: str | None = None):
         result = session.execute(update_stmt)
         api_token = session.scalar(stmt)
 
-        if hasattr(result, "rowcount") and result.rowcount > 0:
+        if isinstance(result, CursorResult) and result.rowcount > 0:
             session.commit()
 
         if not api_token:

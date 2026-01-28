@@ -484,9 +484,24 @@ class WorkflowConverter:
                 if not isinstance(prompt_rules, dict):
                     raise TypeError(f"Expected dict for prompt_rules, got {type(prompt_rules)}")
 
+                prompt_rules_dict: dict[str, object] = {}
+                for key, value in prompt_rules.items():
+                    if isinstance(key, str):
+                        prompt_rules_dict[key] = value
+
+                human_prefix_obj = prompt_rules_dict.get("human_prefix")
+                human_prefix = human_prefix_obj if isinstance(human_prefix_obj, str) and human_prefix_obj else "Human"
+
+                assistant_prefix_obj = prompt_rules_dict.get("assistant_prefix")
+                assistant_prefix = (
+                    assistant_prefix_obj
+                    if isinstance(assistant_prefix_obj, str) and assistant_prefix_obj
+                    else "Assistant"
+                )
+
                 role_prefix = {
-                    "user": prompt_rules.get("human_prefix", "Human"),
-                    "assistant": prompt_rules.get("assistant_prefix", "Assistant"),
+                    "user": human_prefix,
+                    "assistant": assistant_prefix,
                 }
             else:
                 advanced_completion_prompt_template = prompt_template.advanced_completion_prompt_template
