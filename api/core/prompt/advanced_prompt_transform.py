@@ -1,5 +1,4 @@
 from collections.abc import Mapping, Sequence
-from typing import cast
 
 from core.app.entities.app_invoke_entities import ModelConfigWithCredentialsEntity
 from core.file import file_manager
@@ -61,9 +60,14 @@ class AdvancedPromptTransform(PromptTransform):
                 model_config=model_config,
                 image_detail_config=image_detail_config,
             )
-        elif isinstance(prompt_template, list) and all(isinstance(item, ChatModelMessage) for item in prompt_template):
+        elif isinstance(prompt_template, list):
+            chat_prompt_template: list[ChatModelMessage] = []
+            for item in prompt_template:
+                if not isinstance(item, ChatModelMessage):
+                    raise TypeError(f"Expected ChatModelMessage, got {type(item)}")
+                chat_prompt_template.append(item)
             prompt_messages = self._get_chat_model_prompt_messages(
-                prompt_template=prompt_template,
+                prompt_template=chat_prompt_template,
                 inputs=inputs,
                 query=query,
                 files=files,
@@ -220,7 +224,10 @@ class AdvancedPromptTransform(PromptTransform):
                         prompt_message_contents.append(
                             file_manager.to_prompt_message_content(file, image_detail_config=image_detail_config)
                         )
-                    prompt_message_contents.append(TextPromptMessageContent(data=cast(str, last_message.content)))
+                    last_content = last_message.content
+                    prompt_message_contents.append(
+                        TextPromptMessageContent(data=last_content if isinstance(last_content, str) else "")
+                    )
 
                     last_message.content = prompt_message_contents
                 else:
